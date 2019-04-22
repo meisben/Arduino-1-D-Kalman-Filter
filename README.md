@@ -37,5 +37,7 @@ This code performs the following functions
 - [x] Inputs measurement data to a kalman filter to track the robot orientation
 - [x] Plots the kalman filter
 
-To get started load the code onto the arduino, run it, then open the serial plotter.
+To get started load the code onto the arduino, run it, then open the serial plotter. You will see something like the chart below, which shows the true robot orientation (simulated in blue), and the 1-d kalman filter tracking this. The red line plotting values returned from the kalman filter uses both the magnetometer **and** gyroscope in it's implementation.
+
+![Picture1](images/Picture1.png)
 
