@@ -71,9 +71,6 @@ void loop() {
   {
     // update timestamp
     general_timer_3 = millis();
-
-    //can delete shortly
-    xPosterior.mean = romiOrientation;
     
     //update prediction and measurements
     gaussian_prediction(xPosterior, last_romiOrientation, TIMESTEP_2, processModel); //This is equivalent to getting a prediction from the Kinematics
