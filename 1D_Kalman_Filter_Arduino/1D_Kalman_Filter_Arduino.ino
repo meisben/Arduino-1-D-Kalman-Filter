@@ -6,7 +6,7 @@
    ~~~~~Details~~~~~~~~~~~~
 
    Author: Ben Money-Coomes
-   Date: 20/4/19
+   Date: 26/4/19
    Purpose: Implement 1-Dimensional kalman filter
    References: Uses implementation as described at https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
 
@@ -16,13 +16,14 @@
    1D_KF_v1.01 - implementing kalman filter - it's working with a single measurement (from the fake gyroscope)
    1D_KF_v1.02 - incorporating a second measurement (i.e. from the magnetometer)
    1D_Kalman_Filter_Arduino - Creating Github Repository
+   1D_KF_v1.03 - working on intermediate version where we seperate kalman filter out into a class
+   1D_Kalman_Filter_Arduino_v1.01 - [Checkpoint] Kalman Filter implemented as seperate class
 */
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
   Library Includes.                                                              *
 * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-#include <Gaussian.h>
-#include <math.h>
+#include "univariate_kalman.h"
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
   Definitions                                                                      *
@@ -48,9 +49,13 @@ float last_romiOrientation = 0;
 Gaussian xPrior = Gaussian(); // centred around mean 0, with really large variance
 Gaussian xPosterior = Gaussian();
 Gaussian xPosterior_2 = Gaussian(); //Posterior after 2nd measurement update
-Gaussian processModel = Gaussian(0,10); //centred around mean 0, with variance 10
-Gaussian measurementGyroscope = Gaussian(0,10); 
-Gaussian measurementMagnetometer = Gaussian(0,20); //centred around mean 0, with variance 20
+Gaussian processModel = Gaussian(0, 10); //centred around mean 0, with variance 10
+Gaussian measurementGyroscope = Gaussian(0, 10);
+Gaussian measurementMagnetometer = Gaussian(0, 20); //centred around mean 0, with variance 20
+
+//Initialise Kalman filter class
+
+Kalman_Filter KF; //create kalman filter for tracking orientation
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
   Start of main program                                                          *
@@ -71,90 +76,42 @@ void loop() {
   {
     // update timestamp
     general_timer_3 = millis();
-    
+
     //update prediction and measurements
     gaussian_prediction(xPosterior, last_romiOrientation, TIMESTEP_2, processModel); //This is equivalent to getting a prediction from the Kinematics
     gaussian_noisy_measurement(romiOrientation, 10, measurementGyroscope) ;
     gaussian_noisy_measurement(romiOrientation, 20, measurementMagnetometer) ;
-    
+
     //kalman filter using one measurement from the gyroscope
-//    kalman_predict(xPosterior, processModel, xPrior); //i.e. return mean, variance to xPrior from combination of xPosterior and process model gaussians
-//    kalman_update(xPrior, measurementGyroscope, xPosterior); //i.e. return mean, variance to xPosterior from combination of xPrior and measurement gaussians
+    KF.kalman_predict(KF.xPosterior, KF.processModel, KF.xPrior); //i.e. return mean, variance to xPrior from combination of xPosterior and process model gaussians
+    KF.kalman_update(KF.xPrior, measurementGyroscope, KF.xPosterior); //i.e. return mean, variance to xPosterior from combination of xPrior and measurement gaussians
 
     //kalman filter using two measurements. One from the gyroscope, one from the magnetometer
-    kalman_predict(xPosterior_2, processModel, xPrior); //i.e. return mean, variance to xPrior from combination of xPosterior and process model gaussians
-    kalman_update(xPrior, measurementGyroscope, xPosterior); //i.e. return mean, variance to xPosterior from combination of xPrior and measurement gaussians
-    kalman_update(xPosterior, measurementMagnetometer, xPosterior_2); //another update cycle
-    
+    //    KF.kalman_predict(KF.xPosterior_2, KF.processModel, KF.xPrior); //i.e. return mean, variance to xPrior from combination of xPosterior and process model gaussians
+    //    KF.kalman_update(KF.xPrior, measurementGyroscope, KF.xPosterior); //i.e. return mean, variance to xPosterior from combination of xPrior and measurement gaussians
+    //    KF.kalman_update(KF.xPosterior, measurementMagnetometer, KF.xPosterior_2); //another update cycle
+
     // print values for plotting
     Serial.print(romiOrientation);
-//    Serial.print(",");
-//    Serial.print(measurementGyroscope.mean);
-//    Serial.print(",");
-//    Serial.print(measurementMagnetometer.mean);
-//    Serial.print(",");
-//    Serial.print(processModel.mean);
+    //    Serial.print(",");
+    //    Serial.print(measurementGyroscope.mean);
+    //    Serial.print(",");
+    //    Serial.print(measurementMagnetometer.mean);
+    //    Serial.print(",");
+    //    Serial.print(processModel.mean);
     Serial.print(",");
-    Serial.print(xPosterior.mean);
+    Serial.print(KF.xPosterior.mean);
     Serial.print(",");
-    Serial.println(xPosterior_2.mean);
+    Serial.println(KF.xPosterior_2.mean);
 
     //save previous value of angle to generate 'fake kinematic model'
     last_romiOrientation = romiOrientation;
-    
+
   }//end of general_timer_3
 
 } //end of 'loop()'
 
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
-  This is where we define the Kalman filter                                      *
-* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-
-//~~~~~~~~~~~~~~~~KALMAN PREDICT FUNCTION~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-void kalman_predict(Gaussian posterior, Gaussian movement, Gaussian & xPrior)
-{
-  float my_x = posterior.mean; //mean of the posterior
-  float P = posterior.variance; //variance of the posterior
-
-  float dx = movement.mean; //mean of the movement
-  float Q = movement.variance; //variance of the movement
-
-  my_x = my_x + dx;
-  P = P + Q;
-
-  my_x = fmod((my_x) + 360, 360); //map into the interval 0--> 360
-
-  //pass the values as the new prior here!
-  xPrior.mean = my_x;
-  xPrior.variance = P;
-}
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-//~~~~~~~~~~~~~~~~KALMAN UPDATE FUNCTION~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void kalman_update(Gaussian prior, Gaussian measurement, Gaussian & xPosterior)
-{
-
-  float my_x = prior.mean; //mean of the prior
-  float P = prior.variance; //variance of the prior
-
-  float z = measurement.mean; //mean of the measurement
-  float R = measurement.variance; //variance of the measurement
-
-  float y = z - my_x; //residual
-  float K = P / (P + R); //Kalman gain
-
-  my_x = my_x + K * y; //posterior mean
-  P = (1 - K) * P; //posterior variance
-
-  my_x = fmod((my_x) + 360, 360); //map into the interval 0--> 360
-
-  //pass the values back into the posterior here!
-  xPosterior.mean = my_x;
-  xPosterior.variance = P;
-}
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
   This is where the 'fake' system state is created (the orientation of romi)     *
@@ -214,7 +171,7 @@ void update_romi_orientation_hidden() //note I call this 'hidden' because this i
 
 //~~~~~~~~~~~~~~~~TAKE 'FAKE' NOISY MEASURMEENT FUNCTION~~~~~~~~~~~~~~~~~~~~~~~~~~
 void gaussian_noisy_measurement(float myMean, float myVariance, Gaussian & myMeasurement) {
-  
+
   Gaussian myRandomMeasurementGaussian = Gaussian(myMean, myVariance); //create a gaussian to sample a random value from (to recreate noise)
 
   // This will generate a random value, normaly distribute around the mean
@@ -228,7 +185,7 @@ void gaussian_noisy_measurement(float myMean, float myVariance, Gaussian & myMea
 }
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-//~~~~~~~~~~~~~~~~MAKE 'FAKE' NOISY PREDICTION FUNCTION !NEW!~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//~~~~~~~~~~~~~~~~MAKE 'FAKE' NOISY PREDICTION FUNCTION ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 void gaussian_prediction(Gaussian my_xPosterior, float myLastMean, int myTimestep, Gaussian & myProcessModel) {
 
@@ -239,7 +196,7 @@ void gaussian_prediction(Gaussian my_xPosterior, float myLastMean, int myTimeste
 
   // This will generate a random value, normaly distribute around the mean (i.e. recreation of white noise)
   float myRandom_dx = myPredictionGaussian.random();
-  
+
   //set process model parameters
   myProcessModel.mean = myRandom_dx * myTimestep;
 }
