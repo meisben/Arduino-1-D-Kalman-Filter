@@ -44,17 +44,11 @@ unsigned long general_timer_3;
 float romiOrientation = 0; //start at 0
 float last_romiOrientation = 0;
 
-//--------Gaussians for kalman filter
-
-Gaussian xPrior = Gaussian(); // centred around mean 0, with really large variance
-Gaussian xPosterior = Gaussian();
-Gaussian xPosterior_2 = Gaussian(); //Posterior after 2nd measurement update
-Gaussian processModel = Gaussian(0, 10); //centred around mean 0, with variance 10
+//--------Gaussians for measurements----------
 Gaussian measurementGyroscope = Gaussian(0, 10);
 Gaussian measurementMagnetometer = Gaussian(0, 20); //centred around mean 0, with variance 20
 
-//Initialise Kalman filter class
-
+//--------Initialise Kalman filter class----------
 Kalman_Filter KF; //create kalman filter for tracking orientation
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -77,8 +71,8 @@ void loop() {
     // update timestamp
     general_timer_3 = millis();
 
-    //update prediction and measurements
-    gaussian_prediction(xPosterior, last_romiOrientation, TIMESTEP_2, processModel); //This is equivalent to getting a prediction from the Kinematics
+    //update 'fake' prediction and measurements (i.e. this part is simulated)
+    gaussian_prediction(KF.xPosterior, last_romiOrientation, TIMESTEP_2, KF.processModel); //This is equivalent to getting a prediction from the Kinematics
     gaussian_noisy_measurement(romiOrientation, 10, measurementGyroscope) ;
     gaussian_noisy_measurement(romiOrientation, 20, measurementMagnetometer) ;
 
